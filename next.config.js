@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+const path = require("path");
 const withPWA = require("next-pwa")({
   dest: "public", // where service worker is generated
   register: true, // auto register service worker
@@ -24,10 +25,8 @@ const nextConfig = {
     // ✅ Ignore ESLint errors during `next build`
     ignoreDuringBuilds: true,
   },
-  // Enable experimental instrumentation for immediate server startup hooks
-  experimental: {
-    instrumentationHook: true,
-  },
+  // Silence workspace root lockfile warning on server
+  outputFileTracingRoot: path.join(__dirname, "../"),
   // Performance optimizations
   compress: true,
   poweredByHeader: false,
