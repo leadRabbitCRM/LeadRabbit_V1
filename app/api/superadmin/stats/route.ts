@@ -89,13 +89,13 @@ export async function GET(req: NextRequest) {
 
     // Recent customers (last 5)
     const recentCustomers = customers.slice(0, 5).map((c) => ({
+      ...(statsMap[c.customerId] || {}),
       customerId: c.customerId,
       customerName: c.customerName,
       adminEmail: c.adminEmail,
       status: c.status,
       createdAt: c.createdAt,
       metadata: c.metadata,
-      ...(statsMap[c.customerId] || {}),
     }));
 
     return NextResponse.json({
