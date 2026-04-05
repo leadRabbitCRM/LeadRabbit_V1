@@ -1,0 +1,245 @@
+"use client";
+import React, { useState, useCallback, useMemo, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { UserGroupIcon, FunnelIcon, ArrowPathIcon } from "@heroicons/react/24/solid";
+import { Button } from "@heroui/react";
+import axios from "@/lib/axios";
+import LeadManager from "../../../components/shared/leads/LeadManager";
+import Filter from "../../../components/shared/leads/ui/Filter";
+
+export default function AllLeadsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filterButtonRef = useRef(null);
+  const leadManagerRef = useRef(null);
+  const [filters, setFilters] = useState({});
+  const [leads, setLeads] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const leadsFilterFetchRef = useRef(false);
+
+  // Load favorites from database
+  React.useEffect(() => {
+    const loadFavorites = async () => {
+      try {
+        const response = await axios.get("leads/favorites");
+        const loadedFavorites = response.data?.favorites || [];
+        console.log("✅ Favorites loaded from database:", loadedFavorites);
+        setFavorites(loadedFavorites);
+      } catch (error) {
+        console.error("❌ Error loading favorites:", error);
+        setFavorites([]);
+      }
+    };
+
+    loadFavorites();
+
+    // Listen for visibility change to reload when returning to tab
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        loadFavorites();
+      }
+    });
+
+    return () => {
+      document.removeEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          loadFavorites();
+        }
+      });
+    };
+  }, []);
+
+  // Load leads data for filter autocomplete - only once
+  React.useEffect(() => {
+    if (leadsFilterFetchRef.current) return;
+
+    const fetchLeadsForFilter = async () => {
+      try {
+        leadsFilterFetchRef.current = true;
+        const response = await fetch("/api/leads/getAllLeads");
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        const leadsData = await response.json();
+        setLeads(leadsData || []);
+      } catch (error) {
+        console.error("Error fetching leads for filter:", error);
+      }
+    };
+
+    fetchLeadsForFilter();
+  }, []);
+
+  // Handle filters change
+  const handleFiltersChange = useCallback((newFilters) => {
+    setFilters(newFilters);
+  }, []);
+
+  // Clear all filters
+  const handleClearFilters = useCallback(() => {
+    // Create a completely clean filter object with explicit default values
+    const clearedFilters = {
+      nameSearch: "",
+      emailSearch: "",
+      phoneSearch: "",
+      statusFilter: "all",
+      timeFilter: "all",
+      dateRange: null,
+      sourcePlatform: "all",
+      assignedUserSearch: "",
+      // Add a timestamp to force parent component re-evaluation
+      _cleared: Date.now(),
+    };
+    setFilters(clearedFilters);
+  }, []);
+
+  // Calculate active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.nameSearch?.trim()) count++;
+    if (filters.emailSearch?.trim()) count++;
+    if (filters.phoneSearch?.trim()) count++;
+    if (filters.statusFilter && filters.statusFilter !== "all") count++;
+    if (filters.timeFilter && filters.timeFilter !== "all") count++;
+    if (filters.sourcePlatform && filters.sourcePlatform !== "all") count++;
+    if (filters.assignedUserSearch?.trim()) count++;
+    return count;
+  }, [filters]);
+
+  const handleFilterClick = () => {
+    if (filterButtonRef.current) {
+      filterButtonRef.current.openFilter();
+    }
+  };
+
+  // Handle refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Trigger refresh in LeadManager
+      if (leadManagerRef.current?.refetch) {
+        await leadManagerRef.current.refetch();
+      }
+      
+      // Also refresh favorites
+      const response = await axios.get("leads/favorites");
+      const loadedFavorites = response.data?.favorites || [];
+      setFavorites(loadedFavorites);
+      console.log("✅ Data refreshed successfully");
+    } catch (error) {
+      console.error("❌ Error refreshing data:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Toggle favorite
+  const handleToggleFavorite = useCallback((leadId) => {
+    console.log("📌 Toggle favorite clicked - leadId:", leadId);
+    setFavorites((prevFavorites) => {
+      const isFavorite = prevFavorites.includes(leadId);
+      const action = isFavorite ? "remove" : "add";
+      
+      // Call API to update database
+      axios.post("leads/favorites", { leadId, action })
+        .then((response) => {
+          const updatedFavorites = response.data?.favorites || [];
+          console.log("💾 Favorites saved to database:", updatedFavorites);
+          setFavorites(updatedFavorites);
+        })
+        .catch((error) => {
+          console.error("❌ Error updating favorites:", error);
+        });
+
+      // Optimistic update for UI
+      const newFavorites = isFavorite
+        ? prevFavorites.filter((id) => id !== leadId)
+        : [...prevFavorites, leadId];
+      return newFavorites;
+    });
+  }, []);
+
+  return (
+    <div className="bg-gray-50">
+      {/* Hidden Filter Component - Only for triggering modal */}
+      <div className="hidden">
+        <Filter
+          ref={filterButtonRef}
+          leads={leads}
+          onFiltersChange={handleFiltersChange}
+          currentFilters={filters}
+          isAdmin={true}
+        />
+      </div>
+
+      {/* Header */}
+      <div className="bg-gradient-to-br from-green-600 via-emerald-500 to-teal-600">
+        <div className="px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-green-100 text-xs font-medium mb-1">
+                Lead Management 👥
+              </p>
+              <h1 className="text-xl font-bold text-white mb-1">All Leads</h1>
+              <p className="text-green-100 text-xs">
+                Manage and monitor all system leads
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Filter Button */}
+              <Button
+                isIconOnly
+                variant="flat"
+                className="bg-white/20 backdrop-blur-sm text-white border-0 hover:bg-white/30 transition-all duration-200"
+                onClick={handleFilterClick}
+              >
+                <div className="relative">
+                  <FunnelIcon className="w-5 h-5" />
+                  {activeFilterCount > 0 && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-semibold">
+                      {activeFilterCount}
+                    </div>
+                  )}
+                </div>
+              </Button>
+
+              {/* Refresh Button */}
+              <Button
+                isIconOnly
+                variant="flat"
+                className={`bg-white/20 backdrop-blur-sm text-white border-0 hover:bg-white/30 transition-all duration-200 ${
+                  isRefreshing ? "opacity-60" : ""
+                }`}
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
+                <ArrowPathIcon
+                  className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`}
+                />
+              </Button>
+
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-2 text-white">
+                <UserGroupIcon className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-3 pb-6">
+        <LeadManager
+          ref={leadManagerRef}
+          isAdmin={true}
+          hideHeader={true}
+          externalFilters={filters}
+          onClearFilters={handleClearFilters}
+          favorites={favorites}
+          onToggleFavorite={handleToggleFavorite}
+        />
+      </div>
+    </div>
+  );
+}
